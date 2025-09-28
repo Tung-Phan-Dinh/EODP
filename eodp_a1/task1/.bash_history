@@ -1,0 +1,2 @@
+ls -lha
+exit
