@@ -5,12 +5,13 @@ import seaborn as sns
 import json
 
 def process_trips(filepath):
-    trips = pd.DataFrame(filepath)
+    df = pd.read_csv(filepath, on_bad_lines='skip', low_memory=False)
 
-    trips['transport_mode'] = trips['linkmode'].apply(categorize_mode)
+    df['transport_mode'] = df['linkmode'].apply(categorize_mode)
     #clean nan values from trips dataframe
-    trips = trips.dropna(subset=['transport_mode'])
+    df = df.dropna(subset=['transport_mode'])
 
+    '''
     # Plotting the distribution of transport categories
     plt.figure(figsize=(10, 6))
     sns.countplot(data=trips, x='transport_mode', order=trips['transport_mode'].value_counts().index, palette='Set2')
@@ -20,24 +21,28 @@ def process_trips(filepath):
     plt.xticks(rotation=45)
     plt.tight_layout()
     plt.show()
+    '''
 
     # Define the columns to extract
     columns_to_extract = [
         'tripid', 'hhid', 'persid', 'tripno', 'trippoststratweight', 
-        'transport_mode', 'trippurp', 'starthour', 'startime', 'arrhour', 
-        'arrtime', 'travtime', 'triptime', 'cumdist',  'origlga',
+        'transport_mode', 'trippurp', 'starthour','arrhour','travtime',
+        'cumdist',  'origlga', 'destpurp1',
         'destlga', 'dayType', 'homesubregion_ASGS', 'homeregion_ASGS', 
     ]
     # Extract the specified columns and save to a CSV file
-    prefer_trips = trips[columns_to_extract]
-    prefer_trips.to_csv("prefer_trips.csv", index=False)
+    prefer_trips = df[columns_to_extract]
+
+    return prefer_trips
+
+    
 
 
 
 def categorize_mode(mode):
-    if mode in ['Train', 'Public Bus', 'Tram', 'School Bus', 'Plane']:
+    if mode in ['Train', 'Public Bus', 'Tram', 'School Bus']:
         return 'Public'
-    elif mode in ['Vehicle Driver', 'Vehicle Passenger', 'Motorcycle', 'Taxi', 'Mobility Scooter']:
+    elif mode in ['Vehicle Driver', 'Vehicle Passenger', 'Motorcycle', 'Taxi','Rideshare Service']:
         return 'Private'
     elif mode in ['Walking', 'Bicycle', 'Running/jogging', 'e-Scooter']:
         return 'Active'

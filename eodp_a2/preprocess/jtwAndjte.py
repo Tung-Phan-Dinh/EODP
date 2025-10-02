@@ -1,16 +1,30 @@
 import pandas as pd
 
-def clean_journey(input_file, output_file):
+def clean_journey(input_file):
     # Columns required for analysis
     cols = [
         "hhid", "persid", "dayType",
         "main_journey_mode", "journey_travel_time",
         "journey_distance", "journey_elapsed_time",
-        "journey_weight", "homesubregion_ASGS", "homeregion_ASGS",'wasted_time'
+        "journey_weight", "homesubregion_ASGS", "homeregion_ASGS",'wasted_time','num_stops','stop_category','group_travel_distance'
     ]
 
     # Read CSV with only relevant columns
-    df = pd.read_csv(input_file, usecols=lambda c: c in cols)
+    df = pd.read_csv(input_file)
+
+
+    # Create stop category based on number of stops
+    stop_cols = [f'destpurp1_desc_{str(i).zfill(2)}' for i in range(1, 16)]
+    df['num_stops'] = df[stop_cols].notna().sum(axis=1) - 1  # Subtract 1 because destination is not a stop
+    df['stop_category'] = df['num_stops'].apply(
+        lambda x: f'{int(x)} stop' if x in [0, 1] else ('2 stops' if x == 2 else '3+ stops')
+    )
+
+    # Categorize travel distance into groups
+    bins = [0, 10, 20, 40, float('inf')]
+    dist_labels = ['0-10', '10-20', '20-40', '40+']
+    df['group_travel_distance'] = pd.cut(df['journey_distance'], bins=bins, labels=dist_labels, right=False)
+    df['group_travel_distance'].value_counts()
 
     df['wasted_time'] = df['journey_elapsed_time'] - df['journey_travel_time']
 
@@ -41,8 +55,8 @@ def clean_journey(input_file, output_file):
     # Drop duplicate rows
     df = df.drop_duplicates()
 
-    # Save cleaned dataset to CSV
-    df.to_csv(output_file, index=False)
+    # Keep only relevant columns
+    df = df[cols]
     
     return df
 

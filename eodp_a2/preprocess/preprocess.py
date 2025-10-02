@@ -1,128 +1,63 @@
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd 
+from jtwAndjte import clean_journey
+from demographic import preprocess_household, preprocess_person
+from trips import process_trips
 
-def preprocess_person(inputfile):
-    df = pd.read_csv(inputfile)
-    
-    wfh_days = ['wfhmon', 'wfhtue', 'wfhwed', 'wfhthu', 'wfhfri', 'wfhsat', 'wfhsun']
-    wfh_mapping = {'Yes': 1, 'No': 0, 'Not in Work Force': 0}
+edu = "../A2 datasets/journey_to_education_vista_2023_2024.csv"
+work ="../A2 datasets/journey_to_work_vista_2023_2024.csv"
+person = "../A2 datasets/person_vista_2023_2024.csv"
+household =  "../A2 datasets/household_vista_2023_2024.csv"
+trips = "../A2 datasets/trips_vista_2023_2024.csv"
 
-    toll = ['anytoll', 'anyvehwalk', 'anypaidpark']
-    toll_mapping = {'Yes': 1, 'No': 0, 'N/A - Did not use a car': 0}
+def trip_comparison():
+    edu_data = clean_journey(edu)
+    work_data = clean_journey(work)
+    person_data = preprocess_person(person)
+    household_data = preprocess_household(household)
 
-    other = ['mbikelicence', 'otherlicence', 'fulltimework', 'parttimework', 'casualwork', 'anywork']
-    other_mapping = {'Yes': 1, 'No': 0, 'Not applicable': 0}
+    # Merge household data onto person data using 'hhid'
+    demographic = person_data.merge(household_data, on='hhid', suffixes=('', '_household'))
+    # Remove duplicate columns if any
+    demographic = demographic.loc[:, ~demographic.columns.duplicated()]
 
-    # Mode imputation for missing values
-    for number in range(1, 11):
-        mode_value = df[f"perspoststratweight_GROUP_{number}"].mode()
-        if not mode_value.empty:  # Check if mode exists
-            df[f"perspoststratweight_GROUP_{number}"].fillna(mode_value[0], inplace=True)
+    # Add a label column to distinguish work and edu
+    work_data['journey_label'] = 1
+    edu_data['journey_label'] = 0
+    # Combine work and edu into a single DataFrame
+    journey = pd.concat([work_data, edu_data], ignore_index=True)
 
-    df = mapping(df, wfh_days, wfh_mapping)
-    df = mapping(df, toll, toll_mapping)
-    df = mapping(df, other, other_mapping)
+    # Merge demographic data onto journey data using 'persid' and 'hhid'
+    merged_data = journey.merge(demographic, on=['persid', 'hhid'], suffixes=('_journey', '_demographic'))
+    merged_data = merged_data.loc[:, ~merged_data.columns.duplicated()]
+    merged_data.drop(["homesubregion_ASGS_demographic","homeregion_ASGS_demographic","dayType_demographic", "travdow_household"],axis=1, inplace=True)
+    drop_cols = [
+        'persid','hhid','travdow','otherlicence','nolicence','fulltimework','parttimework','casualwork',
+        'activities','emptype','startplace','numstops','wfhmon','wfhtue','wfhwed','wfhthu','wfhfri',
+        'wfhsat','wfhsun','wfhtravday','homesubregion_ASGS','dayType','travdow_household','aveagegroup_5',
+        'homelga'
+    ]
+    merged_data = merged_data.drop(columns=[c for c in drop_cols if c in merged_data.columns])
+    merged_data.to_csv("journey_compare.csv", index=False)
 
-    # Encode income ranges with start of range
-    income_mapping = {
-        'Nil income': 0,
-        'Negative income': 0,
-        '$1-$149 ($1-$7,799)': 1,
-        '$150-$299 ($7,800-$15,599)': 150,
-        '$300-$399 ($15,600-$20,799)': 300,
-        '$400-$499 ($20,800-$25,999)': 400,
-        '$500-$649 ($26,000-$33,799)': 500,
-        '$650-$799 ($33,800-$41,599)': 650,
-        '$800-$999 ($41,600-$51,999)': 800,
-        '$1,000-$1,249 ($52,000-$64,999)': 1000,
-        '$1,250-$1,499 ($65,000-$77,999)': 1250,
-        '$1,500-$1,749 ($78,000-$90,999)': 1500,
-        '$1,750-$1,999 ($91,000-$103,999)': 1750,
-        '$2,000-$2,999 ($104,000-$155,999)': 2000,
-        '$3,000-$3,499 ($156,000-$181,999)': 3000,
-        '$3,500 or more ($182,000 or more)': 3500
-    }
-    df['persinc'] = df['persinc'].map(income_mapping)
+    return demographic
 
-    # Categorize person income into low/medium/high
-    def categorize_person_income(income):
-        if income <= 500:  # Up to $26k annually
-            return 'low'
-        elif income <= 1500:  # $26k to $78k annually
-            return 'medium'
-        else:  # Above $78k annually
-            return 'high'
+df = trip_comparison()
 
-    df['persinc_category'] = df['persinc'].apply(categorize_person_income)
+def demographic(df):
+    trips_data = process_trips(trips)
+    demographic = df
 
-    # Add person income column
-    df.drop(['persno', 'relationship', 'anzsco1', 'anzsco2', 'anzsic1',
-             'anzsic2', 'faretype', 'anytoll', 'anyvehwalk', 'anypaidpark',
-             'perspoststratweight', 'perspoststratweight_GROUP_1', 'perspoststratweight_GROUP_2',
-             'perspoststratweight_GROUP_3', 'perspoststratweight_GROUP_4', 'perspoststratweight_GROUP_5',
-             'perspoststratweight_GROUP_6', 'perspoststratweight_GROUP_7', 'perspoststratweight_GROUP_8',
-             'perspoststratweight_GROUP_9', 'perspoststratweight_GROUP_10'], axis=1, inplace=True)
-    return df
+    # Merge demographic data onto trips data using 'persid' and 'hhid'
+    merged_data = trips_data.merge(demographic, on=['persid', 'hhid'], suffixes=('_trips', '_demographic'))
+    merged_data = merged_data.loc[:, ~merged_data.columns.duplicated()]
+    merged_data.drop(["homesubregion_ASGS_demographic","homeregion_ASGS_demographic","dayType_demographic", "travdow_household"],axis=1, inplace=True)
+    drop_cols = [
+        'persid','hhid','travdow','otherlicence','nolicence','fulltimework','parttimework','casualwork',
+        'activities','startplace','numstops','wfhmon','wfhtue','wfhwed','wfhthu','wfhfri',
+        'wfhsat','wfhsun','wfhtravday','homesubregion_ASGS','dayType','travdow_household','aveagegroup_5',
+        'homelga'
+    ]
+    merged_data = merged_data.drop(columns=[c for c in drop_cols if c in merged_data.columns])
+    merged_data.to_csv("trips_demographic.csv", index=False)
 
-def preprocess_household(inputfile):
-    df = pd.read_csv(inputfile)
-
-    columns = ['youngestgroup_5', 'aveagegroup_5', 'oldestgroup_5']
-    df['hhinc_group'] = df['hhinc_group'].fillna(df['hhinc_group'].mode()[0])
-
-    # Encode household income ranges with start of range
-    hh_income_mapping = {
-        '$1-$149 ($1-$7,799)': 1,
-        '$150-$299 ($7,800-$15,599)': 150,
-        '$300-$399 ($15,600-$20,799)': 300,
-        '$400-$499 ($20,800-$25,999)': 400,
-        '$500-$649 ($26,000-$33,799)': 500,
-        '$650-$799 ($33,800-$41,599)': 650,
-        '$800-$999 ($41,600-$51,999)': 800,
-        '$1,000-$1,249 ($52,000-$64,999)': 1000,
-        '$1,250-$1,499 ($65,000-$77,999)': 1250,
-        '$1,500-$1,749 ($78,000-$90,999)': 1500,
-        '$1,750-$1,999 ($91,000-$103,999)': 1750,
-        '$2,000-$2,499 ($104,000-$129,999)': 2000,
-        '$2,500-$2,999 ($130,000-$155,999)': 2500,
-        '$3,000-$3,499 ($156,000-$181,999)': 3000,
-        '$3,500-$3,999 ($182,000-$207,999)': 3500,
-        '$4,000-$4,499 ($208,000-$233,999)': 4000,
-        '$4,500-$4,999 ($234,000-$259,999)': 4500,
-        '$5,000-$5,999 ($260,000-$311,999)': 5000,
-        '$6,000-$7,999 ($312,000-$415,999)': 6000,
-        '$8,000 or more ($416,000 or more)': 8000
-    }
-
-    df['homelga'] = df['homelga'].apply(extract_location_type)
-    df['hhinc_group'] = df['hhinc_group'].map(hh_income_mapping)
-    df['hhinc_category'] = df['hhinc_group'].apply(categorize_household_income)
-
-    return df[['hhid', 'hhsize', 'dwelltype', 'owndwell', 'travdow',
-                'aveagegroup_5', 'hhinc_group', 'hhinc_category',"homelga"]]
-
-# Function for mapping multiple columns in dataframe
-def mapping(dataframe, list_of_data, binary_mapping):
-    for data in list_of_data:
-        dataframe[data] = dataframe[data].map(binary_mapping)
-    return dataframe
-    
-# Categorize household income into low/medium/high
-def categorize_household_income(income):
-    if income <= 1500:  # Up to $78k annually
-        return 'low'
-    elif income <= 3500:  # $78k to $182k annually
-        return 'medium'
-    else:  # Above $182k annually
-        return 'high'
-
-# Map homelga to City (C) or Shire (S)
-def extract_location_type(location):
-    if '(C)' in location:
-        return 'C'
-    elif '(S)' in location:
-        return 'S'
-    else:
-        return location  # Keep original if neither pattern found
-
+demographic(df)
