@@ -35,10 +35,6 @@ def process_trips(filepath):
 
     return prefer_trips
 
-    
-
-
-
 def categorize_mode(mode):
     if mode in ['Train', 'Public Bus', 'Tram', 'School Bus']:
         return 'Public'
