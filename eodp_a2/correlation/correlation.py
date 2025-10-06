@@ -51,7 +51,8 @@ def chi_square_test():
 
     # Categorical features to test
     categorical_features = ['hhsize', 'sex', 'carlicence', 'anywork', 'studying',
-                           'mainact', 'dwelltype', 'owndwell', 'hhinc_category', 'persinc_category']
+                           'mainact', 'dwelltype', 'owndwell', 'hhinc_category', 'persinc_category',
+                           'totalbikes', 'totalvehs']
 
     print("\n" + "="*80)
     print("CHI-SQUARE TEST RESULTS: Independence between features and transport mode")
@@ -125,7 +126,8 @@ def mutual_information_analysis():
 
     # Encode categorical variables
     categorical_features = ['hhsize', 'sex', 'carlicence', 'anywork', 'studying',
-                           'mainact', 'dwelltype', 'owndwell', 'hhinc_category', 'persinc_category']
+                           'mainact', 'dwelltype', 'owndwell', 'hhinc_category', 'persinc_category',
+                           'totalbikes', 'totalvehs']
 
     # Encode all categorical variables including transport_mode
     encoded_data = data.copy()
@@ -199,7 +201,8 @@ def correlation_heatmap():
     analysis_data = pd.concat([
         data[['hhsize', 'sex_encoded', 'carlicence_encoded',
               'anywork_encoded', 'studying_encoded', 'mainact_encoded',
-              'dwelltype_encoded', 'owndwell_encoded', 'hhinc_category_encoded']],
+              'dwelltype_encoded', 'owndwell_encoded', 'hhinc_category_encoded',
+              'totalbikes', 'totalvehs']],
         transport_dummies
     ], axis=1)
 
@@ -263,7 +266,7 @@ def pearson_correlation():
         data[['hhsize', 'sex_encoded', 'carlicence_encoded',
               'anywork_encoded', 'studying_encoded', 'mainact_encoded',
               'dwelltype_encoded', 'owndwell_encoded', 'hhinc_category_encoded',
-              'persinc_category_encoded']],
+              'persinc_category_encoded', 'totalbikes', 'totalvehs']],
         transport_dummies
     ], axis=1)
 
@@ -278,7 +281,7 @@ def pearson_correlation():
     demographic_features = ['hhsize', 'sex_encoded', 'carlicence_encoded',
                            'anywork_encoded', 'studying_encoded', 'mainact_encoded',
                            'dwelltype_encoded', 'owndwell_encoded', 'hhinc_category_encoded',
-                           'persinc_category_encoded']
+                           'persinc_category_encoded', 'totalbikes', 'totavehs']
 
     transport_modes = [col for col in analysis_data.columns if col.startswith('transport_')]
 

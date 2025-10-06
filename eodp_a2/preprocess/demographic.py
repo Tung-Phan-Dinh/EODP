@@ -99,7 +99,7 @@ def preprocess_household(inputfile):
     df['hhinc_group'] = df['hhinc_group'].map(hh_income_mapping)
     df['hhinc_category'] = df['hhinc_group'].apply(categorize_household_income)
 
-    return df[['hhid', 'hhsize', 'dwelltype', 'owndwell', 'travdow',
+    return df[['hhid', 'hhsize', 'dwelltype', 'owndwell', 'travdow', 'totalbikes','totalvehs',
                 'aveagegroup_5', 'hhinc_group', 'hhinc_category',"homelga"]]
 
 # Function for mapping multiple columns in dataframe
