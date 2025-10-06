@@ -29,6 +29,21 @@ def visualisation():
 
 #visualisation()
 
+def cramers_v(chi2, n, r, c):
+    """Calculate Cramer's V statistic for effect size
+
+    Args:
+        chi2: Chi-square statistic
+        n: Sample size
+        r: Number of rows in contingency table
+        c: Number of columns in contingency table
+
+    Returns:
+        Cramer's V value (0 to 1)
+    """
+    return np.sqrt(chi2 / (n * min(r - 1, c - 1)))
+
+
 def chi_square_test():
     """Perform chi-square test for relationship between categorical variables and transport mode"""
     # Load the data
@@ -49,26 +64,54 @@ def chi_square_test():
         contingency_table = pd.crosstab(data[feature], data['transport_mode'])
 
         # Perform chi-square test
-        chi2, p_value, _, _ = chi2_contingency(contingency_table)
+        chi2, p_value, dof, expected_freq = chi2_contingency(contingency_table)
+
+        # Calculate Cramer's V
+        n = contingency_table.sum().sum()
+        r, c = contingency_table.shape
+        cramers_v_value = cramers_v(chi2, n, r, c)
+
+        # Interpret Cramer's V (Cohen's guidelines)
+        if min(r, c) == 2:  # 2x2 or 2xk table
+            if cramers_v_value < 0.1:
+                strength = 'Negligible'
+            elif cramers_v_value < 0.3:
+                strength = 'Weak'
+            elif cramers_v_value < 0.5:
+                strength = 'Moderate'
+            else:
+                strength = 'Strong'
+        else:  # Larger tables
+            if cramers_v_value < 0.07:
+                strength = 'Negligible'
+            elif cramers_v_value < 0.21:
+                strength = 'Weak'
+            elif cramers_v_value < 0.35:
+                strength = 'Moderate'
+            else:
+                strength = 'Strong'
 
         chi_square_results.append({
             'Feature': feature,
             'Chi-square': chi2,
             'p-value': p_value,
+            'Cramer\'s V': cramers_v_value,
+            'Effect Size': strength,
             'Significant (p<0.05)': 'Yes' if p_value < 0.05 else 'No'
         })
 
         print(f"\n{feature}:")
         print(f"  Chi-square statistic: {chi2:.4f}")
         print(f"  p-value: {p_value:.4e}")
+        print(f"  Cramer's V: {cramers_v_value:.4f} ({strength})")
         print(f"  Significant: {'Yes (p < 0.05)' if p_value < 0.05 else 'No (p >= 0.05)'}")
 
     # Create summary dataframe
     results_df = pd.DataFrame(chi_square_results)
-    results_df = results_df.sort_values('Chi-square', ascending=False)
+    results_df = results_df.sort_values('Cramer\'s V', ascending=False)
 
     print("\n" + "="*80)
-    print("SUMMARY (sorted by Chi-square statistic):")
+    print("SUMMARY (sorted by Cramer's V - effect size):")
     print("="*80)
     print(results_df.to_string(index=False))
 
@@ -299,5 +342,3 @@ def pearson_correlation():
 # Run all analyses
 chi_square_test()
 mutual_information_analysis()
-correlation_heatmap()
-pearson_correlation()
