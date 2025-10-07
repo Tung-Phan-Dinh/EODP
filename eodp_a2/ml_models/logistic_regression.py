@@ -17,8 +17,8 @@ def prepare_data():
     data = pd.read_csv('../preprocess/trips_demographic.csv')
 
     # Select features based on correlation analysis
-    categorical_features = ['hhsize', 'sex', 'carlicence', 'anywork', 'studying',
-                           'mainact', 'dwelltype', 'owndwell', 'hhinc_category', 'persinc_category']
+    categorical_features = ['hhsize', 'carlicence', 'anywork', 'studying', 'mainact', 'dwelltype', 
+                            'owndwell', 'hhinc_category', 'persinc_category', 'totalvehs', 'totalbikes']
 
     # Encode categorical variables
     data_encoded = data.copy()

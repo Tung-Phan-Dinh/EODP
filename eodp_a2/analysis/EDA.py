@@ -65,4 +65,32 @@ def eda():
     plt.savefig('transport_mode_by_totalvehs.png', dpi=300, bbox_inches='tight')
     plt.show()
 
+    # Count of totalvehs for each income group
+    vehs_income = df.groupby(['hhinc_category', 'totalvehs']).size().unstack(fill_value=0)
+
+    plt.figure(figsize=(12, 6))
+    vehs_income.plot(kind='bar', colormap='viridis')
+    plt.title("Count of Total Vehicles by Household Income Category", fontsize=16)
+    plt.xlabel("Household Income Category", fontsize=12)
+    plt.ylabel("Count", fontsize=12)
+    plt.legend(title='Total Vehicles', bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    plt.savefig('totalvehs_by_income.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+    # Alternative: Stacked bar chart showing proportions
+    vehs_income_percentage = vehs_income.div(vehs_income.sum(axis=1), axis=0) * 100
+
+    plt.figure(figsize=(12, 6))
+    vehs_income_percentage.plot(kind='bar', stacked=True, colormap='viridis')
+    plt.title("Distribution of Total Vehicles by Household Income Category (%)", fontsize=16)
+    plt.xlabel("Household Income Category", fontsize=12)
+    plt.ylabel("Percentage (%)", fontsize=12)
+    plt.legend(title='Total Vehicles', bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    plt.savefig('totalvehs_by_income_percentage.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
 eda()

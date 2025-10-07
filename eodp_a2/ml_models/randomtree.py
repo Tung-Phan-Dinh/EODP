@@ -1,456 +1,285 @@
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import (train_test_split, cross_val_score, GridSearchCV,
-                                      KFold, StratifiedKFold, cross_validate)
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score, precision_score, recall_score
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from scipy.stats import randint
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-
-def prepare_data():
-    """Load and prepare data for Random Forest classification"""
-    # Load the data
-    data = pd.read_csv('../preprocess/trips_demographic.csv')
-
-    # Select features based on correlation analysis
-    # Categorical features to encode
-    categorical_features = ['hhsize', 'sex', 'carlicence', 'anywork', 'studying',
-                           'mainact', 'dwelltype', 'owndwell', 'hhinc_category', 'persinc_category']
-
-    # Encode categorical variables
-    data_encoded = data.copy()
-    for col in categorical_features:
-        data_encoded[col + '_encoded'] = pd.factorize(data_encoded[col])[0]
-
-    # Prepare feature matrix (X) and target variable (y)
-    feature_cols = [col + '_encoded' for col in categorical_features]
-    X = data_encoded[feature_cols].dropna()
-    y = data_encoded.loc[X.index, 'transport_mode']
-
-    print("="*80)
-    print("DATA PREPARATION")
-    print("="*80)
-    print(f"Total samples: {len(X)}")
-    print(f"Number of features: {len(feature_cols)}")
-    print(f"\nFeatures used: {categorical_features}")
-    print(f"\nTransport mode distribution:")
-    print(y.value_counts())
-    print(f"\nClass proportions:")
-    print(y.value_counts(normalize=True))
-
-    return X, y, categorical_features
-
-
-def train_random_forest(X, y, test_size=0.2, random_state=42):
-    """Train Random Forest classifier"""
-    # Split data into train and test sets
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state, stratify=y
-    )
-
-    print("\n" + "="*80)
-    print("TRAINING RANDOM FOREST CLASSIFIER")
-    print("="*80)
-    print(f"Training set size: {len(X_train)}")
-    print(f"Test set size: {len(X_test)}")
-
-    # Initialize Random Forest with reasonable default parameters
-    rf_classifier = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_split=20,
-        min_samples_leaf=10,
-        random_state=random_state,
-        n_jobs=-1,
-        class_weight='balanced'  # Handle class imbalance
-    )
-
-    # Train the model
-    print("\nTraining model...")
-    rf_classifier.fit(X_train, y_train)
-
-    # Make predictions
-    y_pred_train = rf_classifier.predict(X_train)
-    y_pred_test = rf_classifier.predict(X_test)
-
-    # Evaluate performance
-    train_accuracy = accuracy_score(y_train, y_pred_train)
-    test_accuracy = accuracy_score(y_test, y_pred_test)
-
-    print(f"\nTraining Accuracy: {train_accuracy:.4f}")
-    print(f"Test Accuracy: {test_accuracy:.4f}")
-
-    return rf_classifier, X_train, X_test, y_train, y_test, y_pred_test
-
-
-def evaluate_model(rf_classifier, X_test, y_test, y_pred_test):
-    """Evaluate the Random Forest model"""
-    print("\n" + "="*80)
-    print("MODEL EVALUATION")
-    print("="*80)
-
-    # Classification report
-    print("\nClassification Report:")
-    print(classification_report(y_test, y_pred_test))
-
-    # Confusion matrix
-    cm = confusion_matrix(y_test, y_pred_test)
-
-    # Plot confusion matrix
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                xticklabels=rf_classifier.classes_,
-                yticklabels=rf_classifier.classes_)
-    plt.title('Confusion Matrix - Random Forest Classifier')
-    plt.ylabel('Actual')
-    plt.xlabel('Predicted')
-    plt.tight_layout()
-    plt.savefig('confusion_matrix_rf.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-    return cm
-
-
-def feature_importance_analysis(rf_classifier, feature_names):
-    """Analyze and visualize feature importance"""
-    print("\n" + "="*80)
-    print("FEATURE IMPORTANCE ANALYSIS")
-    print("="*80)
-
-    # Get feature importances
-    importances = rf_classifier.feature_importances_
-
-    # Create dataframe for better visualization
-    feature_importance_df = pd.DataFrame({
-        'Feature': feature_names,
-        'Importance': importances
-    }).sort_values('Importance', ascending=False)
-
-    print("\nFeature Importances (sorted):")
-    print(feature_importance_df.to_string(index=False))
-
-    # Plot feature importances
-    plt.figure(figsize=(10, 6))
-    plt.barh(feature_importance_df['Feature'], feature_importance_df['Importance'])
-    plt.xlabel('Importance')
-    plt.ylabel('Feature')
-    plt.title('Feature Importance in Random Forest Model')
-    plt.gca().invert_yaxis()
-    plt.tight_layout()
-    plt.savefig('feature_importance_rf.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-    return feature_importance_df
-
-
-def stratified_kfold_cv(X, y, n_splits=5, random_state=42):
-    """Perform Stratified K-Fold cross-validation (maintains class distribution in each fold)"""
-    print("\n" + "="*80)
-    print("STRATIFIED K-FOLD CROSS-VALIDATION")
-    print("="*80)
-
-    rf_classifier = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_split=20,
-        min_samples_leaf=10,
-        random_state=random_state,
-        n_jobs=-1,
-        class_weight='balanced'
-    )
-
-    # Use StratifiedKFold to maintain class proportions in each fold
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-
-    # Track metrics for each fold
-    fold_results = []
-    all_y_true = []
-    all_y_pred = []
-
-    print(f"\nPerforming {n_splits}-fold stratified cross-validation...")
-
-    for fold, (train_idx, test_idx) in enumerate(skf.split(X, y), 1):
-        # Split data
-        X_train_fold, X_test_fold = X.iloc[train_idx], X.iloc[test_idx]
-        y_train_fold, y_test_fold = y.iloc[train_idx], y.iloc[test_idx]
-
-        # Train model
-        rf_classifier.fit(X_train_fold, y_train_fold)
-
-        # Predict
-        y_pred_fold = rf_classifier.predict(X_test_fold)
-
-        # Calculate metrics
-        accuracy = accuracy_score(y_test_fold, y_pred_fold)
-        precision = precision_score(y_test_fold, y_pred_fold, average='weighted', zero_division=0)
-        recall = recall_score(y_test_fold, y_pred_fold, average='weighted', zero_division=0)
-        f1 = f1_score(y_test_fold, y_pred_fold, average='weighted', zero_division=0)
-
-        fold_results.append({
-            'Fold': fold,
-            'Accuracy': accuracy,
-            'Precision': precision,
-            'Recall': recall,
-            'F1-Score': f1
-        })
-
-        # Store predictions for overall confusion matrix
-        all_y_true.extend(y_test_fold)
-        all_y_pred.extend(y_pred_fold)
-
-        print(f"Fold {fold}: Accuracy={accuracy:.4f}, Precision={precision:.4f}, Recall={recall:.4f}, F1={f1:.4f}")
-
-    # Create results dataframe
-    results_df = pd.DataFrame(fold_results)
-
-    print("\n" + "-"*80)
-    print("CROSS-VALIDATION SUMMARY:")
-    print("-"*80)
-    print(f"Mean Accuracy:  {results_df['Accuracy'].mean():.4f} ± {results_df['Accuracy'].std():.4f}")
-    print(f"Mean Precision: {results_df['Precision'].mean():.4f} ± {results_df['Precision'].std():.4f}")
-    print(f"Mean Recall:    {results_df['Recall'].mean():.4f} ± {results_df['Recall'].std():.4f}")
-    print(f"Mean F1-Score:  {results_df['F1-Score'].mean():.4f} ± {results_df['F1-Score'].std():.4f}")
-
-    # Plot fold performance
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
-
-    for idx, metric in enumerate(metrics):
-        ax = axes[idx // 2, idx % 2]
-        ax.plot(results_df['Fold'], results_df[metric], marker='o', linewidth=2, markersize=8)
-        ax.axhline(y=results_df[metric].mean(), color='r', linestyle='--', label=f'Mean: {results_df[metric].mean():.4f}')
-        ax.set_xlabel('Fold')
-        ax.set_ylabel(metric)
-        ax.set_title(f'{metric} Across Folds')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        ax.set_xticks(results_df['Fold'])
-
-    plt.tight_layout()
-    plt.savefig('kfold_performance.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-    # Overall confusion matrix from all folds
-    cm_overall = confusion_matrix(all_y_true, all_y_pred)
-
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm_overall, annot=True, fmt='d', cmap='Blues',
-                xticklabels=np.unique(y),
-                yticklabels=np.unique(y))
-    plt.title('Overall Confusion Matrix (All Folds Combined)')
-    plt.ylabel('Actual')
-    plt.xlabel('Predicted')
-    plt.tight_layout()
-    plt.savefig('confusion_matrix_kfold.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-    return results_df, all_y_true, all_y_pred
-
-
-def kfold_cv_detailed(X, y, n_splits=5, random_state=42):
-    """Detailed K-Fold cross-validation with multiple metrics"""
-    print("\n" + "="*80)
-    print("DETAILED K-FOLD CROSS-VALIDATION (Multiple Metrics)")
-    print("="*80)
-
-    rf_classifier = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_split=20,
-        min_samples_leaf=10,
-        random_state=random_state,
-        n_jobs=-1,
-        class_weight='balanced'
-    )
-
-    # Use StratifiedKFold for classification
-    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-
-    # Define multiple scoring metrics
-    scoring = {
-        'accuracy': 'accuracy',
-        'precision_weighted': 'precision_weighted',
-        'recall_weighted': 'recall_weighted',
-        'f1_weighted': 'f1_weighted'
-    }
-
-    # Perform cross-validation with multiple metrics
-    cv_results = cross_validate(
-        rf_classifier, X, y,
-        cv=cv,
-        scoring=scoring,
-        return_train_score=True,
-        n_jobs=-1
-    )
-
-    # Display results
-    print(f"\n{n_splits}-Fold Cross-Validation Results:")
-    print("-"*80)
-
-    for metric in scoring.keys():
-        train_scores = cv_results[f'train_{metric}']
-        test_scores = cv_results[f'test_{metric}']
-
-        print(f"\n{metric.upper()}:")
-        print(f"  Train: {train_scores.mean():.4f} ± {train_scores.std():.4f}")
-        print(f"  Test:  {test_scores.mean():.4f} ± {test_scores.std():.4f}")
-        print(f"  Test scores per fold: {test_scores}")
-
-    return cv_results
-
-
-def compare_fold_strategies(X, y, random_state=42):
-    """Compare different folding strategies"""
-    print("\n" + "="*80)
-    print("COMPARING DIFFERENT FOLDING STRATEGIES")
-    print("="*80)
-
-    rf_classifier = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_split=20,
-        min_samples_leaf=10,
-        random_state=random_state,
-        n_jobs=-1,
-        class_weight='balanced'
-    )
-
-    strategies = {
-        'KFold (5-fold)': KFold(n_splits=5, shuffle=True, random_state=random_state),
-        'StratifiedKFold (5-fold)': StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state),
-        'KFold (10-fold)': KFold(n_splits=10, shuffle=True, random_state=random_state),
-        'StratifiedKFold (10-fold)': StratifiedKFold(n_splits=10, shuffle=True, random_state=random_state),
-    }
-
-    comparison_results = []
-
-    for strategy_name, cv_strategy in strategies.items():
-        scores = cross_val_score(rf_classifier, X, y, cv=cv_strategy, scoring='accuracy', n_jobs=-1)
-
-        comparison_results.append({
-            'Strategy': strategy_name,
-            'Mean Accuracy': scores.mean(),
-            'Std Dev': scores.std(),
-            'Min': scores.min(),
-            'Max': scores.max()
-        })
-
-        print(f"\n{strategy_name}:")
-        print(f"  Mean Accuracy: {scores.mean():.4f} ± {scores.std():.4f}")
-        print(f"  Range: [{scores.min():.4f}, {scores.max():.4f}]")
-
-    # Create comparison dataframe
-    comparison_df = pd.DataFrame(comparison_results)
-
-    print("\n" + "-"*80)
-    print("COMPARISON SUMMARY:")
-    print("-"*80)
-    print(comparison_df.to_string(index=False))
-
-    # Visualize comparison
-    plt.figure(figsize=(12, 6))
-    x_pos = np.arange(len(comparison_df))
-    plt.bar(x_pos, comparison_df['Mean Accuracy'], yerr=comparison_df['Std Dev'],
-            capsize=5, alpha=0.7, color='steelblue')
-    plt.xlabel('Folding Strategy')
-    plt.ylabel('Mean Accuracy')
-    plt.title('Comparison of Different Cross-Validation Strategies')
-    plt.xticks(x_pos, comparison_df['Strategy'], rotation=15, ha='right')
-    plt.grid(True, alpha=0.3, axis='y')
-    plt.tight_layout()
-    plt.savefig('cv_strategy_comparison.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-    return comparison_df
-
-
-def hyperparameter_tuning(X, y, random_state=42):
-    """Perform hyperparameter tuning using GridSearchCV"""
-    print("\n" + "="*80)
-    print("HYPERPARAMETER TUNING")
-    print("="*80)
-
-    # Define parameter grid
-    param_grid = {
-        'n_estimators': [50, 100, 200],
-        'max_depth': [5, 10, 15, None],
-        'min_samples_split': [10, 20, 50],
-        'min_samples_leaf': [5, 10, 20]
-    }
-
-    # Initialize base model
-    rf_base = RandomForestClassifier(
-        random_state=random_state,
-        n_jobs=-1,
-        class_weight='balanced'
-    )
-
-    # Perform grid search
-    print("\nSearching for best parameters...")
-    print("This may take a while...")
-
-    grid_search = GridSearchCV(
-        rf_base,
-        param_grid,
-        cv=3,
-        scoring='accuracy',
-        n_jobs=-1,
-        verbose=1
-    )
-
-    grid_search.fit(X, y)
-
-    print("\n" + "="*80)
-    print("BEST PARAMETERS FOUND")
-    print("="*80)
-    print(f"Best parameters: {grid_search.best_params_}")
-    print(f"Best cross-validation score: {grid_search.best_score_:.4f}")
-
-    return grid_search.best_estimator_, grid_search.best_params_
-
-
-def main():
-    """Main function to run the complete Random Forest analysis"""
-    # Prepare data
-    X, y, categorical_features = prepare_data()
-
-    # Train Random Forest (simple train-test split)
-    rf_classifier, X_train, X_test, y_train, y_test, y_pred_test = train_random_forest(X, y)
-
-    # Evaluate model
-    evaluate_model(rf_classifier, X_test, y_test, y_pred_test)
-
-    # Feature importance analysis
-    feature_importance_analysis(rf_classifier, categorical_features)
-
-    # K-Fold Cross-Validation Techniques
-    print("\n" + "="*80)
-    print("APPLYING K-FOLD CROSS-VALIDATION TECHNIQUES")
-    print("="*80)
-
-    # 1. Stratified K-Fold (recommended for imbalanced classes)
-    stratified_kfold_cv(X, y, n_splits=5)
-
-    # 2. Detailed cross-validation with multiple metrics
-    kfold_cv_detailed(X, y, n_splits=5)
-
-    # 3. Compare different folding strategies
-    compare_fold_strategies(X, y)
-
-    # Uncomment below to perform hyperparameter tuning (takes longer)
-    # best_model, best_params = hyperparameter_tuning(X, y)
-
-    print("\n" + "="*80)
-    print("ANALYSIS COMPLETE")
-    print("="*80)
-    print("\nGenerated files:")
-    print("  - confusion_matrix_rf.png")
-    print("  - feature_importance_rf.png")
-    print("  - kfold_performance.png")
-    print("  - confusion_matrix_kfold.png")
-    print("  - cv_strategy_comparison.png")
-
-
-if __name__ == "__main__":
-    main()
+# Load the data
+df = pd.read_csv('../preprocess/trips_demographic.csv')
+
+print("="*70)
+print("RANDOM FOREST MULTI-CLASS CLASSIFICATION")
+print("Transport Mode Prediction: Private, Public, Active, Other")
+print("="*70)
+
+print(f"\nOriginal dataset shape: {df.shape}")
+print(f"\nTransport mode distribution:")
+mode_counts = df['transport_mode'].value_counts()
+print(mode_counts)
+print("\nPercentage distribution:")
+print((mode_counts / len(df) * 100).round(2))
+
+# Select features as specified
+features = ['hhsize', 'dwelltype', 'studying', 'carlicence', 'mainact', 'totalvehs']
+target = 'transport_mode'
+
+# Check for missing values
+print(f"\nMissing values in features:")
+print(df[features].isnull().sum())
+
+# Remove rows with missing values in selected features or target
+df_clean = df[features + [target]].dropna()
+
+print(f"\nDataset shape after removing missing values: {df_clean.shape}")
+print(f"\nFinal transport mode distribution:")
+print(df_clean[target].value_counts())
+
+# Prepare features and target
+X = df_clean[features].copy()
+y = df_clean[target].copy()
+
+# Encode categorical variables
+label_encoders = {}
+categorical_features = ['dwelltype', 'studying', 'carlicence', 'mainact']
+
+print("\n" + "="*70)
+print("ENCODING CATEGORICAL FEATURES")
+print("="*70)
+
+for feature in categorical_features:
+    le = LabelEncoder()
+    X[feature] = le.fit_transform(X[feature].astype(str))
+    label_encoders[feature] = le
+    print(f"\n{feature} categories ({len(le.classes_)} unique values):")
+    encoding_dict = dict(zip(le.classes_, le.transform(le.classes_)))
+    for cat, code in list(encoding_dict.items())[:10]:  # Show first 10
+        print(f"  {cat}: {code}")
+    if len(le.classes_) > 10:
+        print(f"  ... and {len(le.classes_) - 10} more")
+
+# Split the data into training and testing sets (80-20 split)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print("\n" + "="*70)
+print("TRAIN-TEST SPLIT")
+print("="*70)
+print(f"\nTraining set size: {X_train.shape[0]} ({X_train.shape[0]/len(X)*100:.1f}%)")
+print(f"Testing set size: {X_test.shape[0]} ({X_test.shape[0]/len(X)*100:.1f}%)")
+
+print("\nTraining set class distribution:")
+train_dist = y_train.value_counts()
+print(train_dist)
+print("\nTesting set class distribution:")
+test_dist = y_test.value_counts()
+print(test_dist)
+
+# Create and train the Random Forest model with Randomized Search
+print("\n" + "="*70)
+print("TRAINING RANDOM FOREST MODEL WITH RANDOMIZED SEARCH")
+print("="*70)
+
+# Define the parameter distributions for randomized search
+param_distributions = {
+    'n_estimators': randint(50, 200),
+    'max_depth': randint(5, 30),
+    'min_samples_split': randint(2, 50),
+    'min_samples_leaf': randint(1, 20),
+}
+
+# Base model
+rf_base = RandomForestClassifier(
+    random_state=42,
+    n_jobs=-1,
+    class_weight='balanced'
+)
+
+# Randomized search
+print("\nParameter distributions:")
+print(f"  - n_estimators: 50 to 200")
+print(f"  - max_depth: 5 to 30")
+print(f"  - min_samples_split: 2 to 50")
+print(f"  - min_samples_leaf: 1 to 20")
+print(f"\nRunning randomized search with 20 iterations and 3-fold CV...")
+
+random_search = RandomizedSearchCV(
+    estimator=rf_base,
+    param_distributions=param_distributions,
+    n_iter=20,  # Number of random combinations to try
+    cv=3,       # 3-fold cross-validation
+    random_state=42,
+    n_jobs=-1,
+    verbose=1,
+    scoring='accuracy'
+)
+
+random_search.fit(X_train, y_train)
+
+# Get best model
+rf_model = random_search.best_estimator_
+
+print("\nRandomized search complete!")
+print("\nBest Parameters Found:")
+print(f"  - Number of trees: {rf_model.n_estimators}")
+print(f"  - Max depth: {rf_model.max_depth}")
+print(f"  - Min samples split: {rf_model.min_samples_split}")
+print(f"  - Min samples leaf: {rf_model.min_samples_leaf}")
+print(f"  - Best CV Score: {random_search.best_score_:.4f}")
+
+# Make predictions
+y_pred = rf_model.predict(X_test)
+y_pred_proba = rf_model.predict_proba(X_test)
+
+# Evaluate the model
+print("\n" + "="*70)
+print("MODEL EVALUATION")
+print("="*70)
+
+accuracy = accuracy_score(y_test, y_pred)
+print(f"\nOverall Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+
+print("\n" + "-"*70)
+print("DETAILED CLASSIFICATION REPORT")
+print("-"*70)
+print(classification_report(y_test, y_pred))
+
+print("\n" + "-"*70)
+print("CONFUSION MATRIX")
+print("-"*70)
+cm = confusion_matrix(y_test, y_pred, labels=rf_model.classes_)
+print(cm)
+print(f"\nClasses order: {rf_model.classes_}")
+
+# Per-class accuracy
+print("\n" + "-"*70)
+print("PER-CLASS PERFORMANCE")
+print("-"*70)
+for i, class_name in enumerate(rf_model.classes_):
+    class_correct = cm[i, i]
+    class_total = cm[i, :].sum()
+    class_accuracy = class_correct / class_total if class_total > 0 else 0
+    print(f"{class_name:12s}: {class_accuracy:.4f} ({class_accuracy*100:.2f}%) - "
+          f"{class_correct}/{class_total} correct")
+
+# Feature importance
+print("\n" + "="*70)
+print("FEATURE IMPORTANCE")
+print("="*70)
+
+feature_importance = pd.DataFrame({
+    'feature': features,
+    'importance': rf_model.feature_importances_
+}).sort_values('importance', ascending=False)
+
+print("\n", feature_importance.to_string(index=False))
+
+# Visualizations
+fig = plt.figure(figsize=(16, 10))
+gs = fig.add_gridspec(2, 3, hspace=0.3, wspace=0.3)
+
+# 1. Confusion Matrix
+ax1 = fig.add_subplot(gs[0, :2])
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+            xticklabels=rf_model.classes_, 
+            yticklabels=rf_model.classes_,
+            ax=ax1, cbar_kws={'label': 'Count'})
+ax1.set_xlabel('Predicted', fontsize=12, fontweight='bold')
+ax1.set_ylabel('Actual', fontsize=12, fontweight='bold')
+ax1.set_title(f'Confusion Matrix\nOverall Accuracy: {accuracy:.4f}', 
+              fontsize=14, fontweight='bold')
+
+# 2. Feature Importance
+ax2 = fig.add_subplot(gs[0, 2])
+colors = plt.cm.viridis(np.linspace(0.3, 0.9, len(features)))
+ax2.barh(feature_importance['feature'], feature_importance['importance'], color=colors)
+ax2.set_xlabel('Importance', fontsize=11, fontweight='bold')
+ax2.set_title('Feature Importance', fontsize=12, fontweight='bold')
+ax2.invert_yaxis()
+for i, v in enumerate(feature_importance['importance']):
+    ax2.text(v + 0.005, i, f'{v:.3f}', va='center', fontsize=9)
+
+# 3. Class Distribution
+ax3 = fig.add_subplot(gs[1, 0])
+class_dist = y.value_counts().sort_index()
+bars = ax3.bar(class_dist.index, class_dist.values, 
+               color=['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A'], alpha=0.7)
+ax3.set_xlabel('Transport Mode', fontsize=11, fontweight='bold')
+ax3.set_ylabel('Count', fontsize=11, fontweight='bold')
+ax3.set_title('Dataset Class Distribution', fontsize=12, fontweight='bold')
+ax3.tick_params(axis='x', rotation=45)
+for bar in bars:
+    height = bar.get_height()
+    ax3.text(bar.get_x() + bar.get_width()/2., height,
+            f'{int(height)}',
+            ha='center', va='bottom', fontsize=9)
+
+# 4. Per-Class Accuracy
+ax4 = fig.add_subplot(gs[1, 1])
+class_accuracies = []
+for i, class_name in enumerate(rf_model.classes_):
+    class_correct = cm[i, i]
+    class_total = cm[i, :].sum()
+    class_acc = class_correct / class_total if class_total > 0 else 0
+    class_accuracies.append(class_acc)
+
+bars = ax4.bar(rf_model.classes_, class_accuracies,
+               color=['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A'], alpha=0.7)
+ax4.set_xlabel('Transport Mode', fontsize=11, fontweight='bold')
+ax4.set_ylabel('Accuracy', fontsize=11, fontweight='bold')
+ax4.set_title('Per-Class Accuracy', fontsize=12, fontweight='bold')
+ax4.set_ylim([0, 1])
+ax4.axhline(y=accuracy, color='red', linestyle='--', label='Overall Accuracy', linewidth=2)
+ax4.tick_params(axis='x', rotation=45)
+ax4.legend()
+for bar, acc in zip(bars, class_accuracies):
+    height = bar.get_height()
+    ax4.text(bar.get_x() + bar.get_width()/2., height + 0.02,
+            f'{acc:.3f}',
+            ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+# 5. Prediction Distribution
+ax5 = fig.add_subplot(gs[1, 2])
+pred_dist = pd.Series(y_pred).value_counts().sort_index()
+width = 0.35
+x = np.arange(len(rf_model.classes_))
+bars1 = ax5.bar(x - width/2, [test_dist.get(c, 0) for c in rf_model.classes_], 
+                width, label='Actual', alpha=0.8)
+bars2 = ax5.bar(x + width/2, [pred_dist.get(c, 0) for c in rf_model.classes_], 
+                width, label='Predicted', alpha=0.8)
+ax5.set_xlabel('Transport Mode', fontsize=11, fontweight='bold')
+ax5.set_ylabel('Count', fontsize=11, fontweight='bold')
+ax5.set_title('Actual vs Predicted (Test Set)', fontsize=12, fontweight='bold')
+ax5.set_xticks(x)
+ax5.set_xticklabels(rf_model.classes_, rotation=45)
+ax5.legend()
+
+plt.savefig('random_forest_multiclass_results.png', dpi=300, bbox_inches='tight')
+print("\nVisualization saved as 'random_forest_multiclass_results.png'")
+
+# Example predictions
+print("\n" + "="*70)
+print("EXAMPLE PREDICTIONS")
+print("="*70)
+
+n_examples = 5
+for i in range(min(n_examples, len(X_test))):
+    print(f"\nExample {i+1}:")
+    print(f"  Actual: {y_test.iloc[i]}")
+    print(f"  Predicted: {y_pred[i]}")
+    print(f"  Probabilities:")
+    for j, class_name in enumerate(rf_model.classes_):
+        print(f"    {class_name}: {y_pred_proba[i][j]:.4f} ({y_pred_proba[i][j]*100:.2f}%)")
+    print(f"  Result: {'✓ CORRECT' if y_pred[i] == y_test.iloc[i] else '✗ INCORRECT'}")
+
+print("\n" + "="*70)
+print("MODEL TRAINING AND EVALUATION COMPLETE!")
+print("="*70)
+print(f"\nFinal Model Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+print(f"Total samples: {len(df_clean)}")
+print(f"Features used: {', '.join(features)}")
+print(f"Classes predicted: {', '.join(rf_model.classes_)}")
