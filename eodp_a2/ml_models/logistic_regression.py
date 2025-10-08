@@ -1,412 +1,318 @@
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import (train_test_split, cross_validate,
-                                      StratifiedKFold, GridSearchCV)
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import (classification_report, confusion_matrix,
-                              accuracy_score, f1_score, precision_score,
-                              recall_score, roc_auc_score, roc_curve)
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-
-def prepare_data():
-    """Load and prepare data for Logistic Regression"""
-    # Load the data
-    data = pd.read_csv('../preprocess/trips_demographic.csv')
-
-    # Select features based on correlation analysis
-    categorical_features = ['hhsize', 'carlicence', 'anywork', 'studying', 'mainact', 'dwelltype', 
-                            'owndwell', 'hhinc_category', 'persinc_category', 'totalvehs', 'totalbikes']
-
-    # Encode categorical variables
-    data_encoded = data.copy()
-    for col in categorical_features:
-        data_encoded[col + '_encoded'] = pd.factorize(data_encoded[col])[0]
-
-    # Prepare feature matrix (X) and target variable (y)
-    feature_cols = [col + '_encoded' for col in categorical_features]
-    X = data_encoded[feature_cols].dropna()
-    y = data_encoded.loc[X.index, 'transport_mode']
-
-    print("="*80)
-    print("DATA PREPARATION")
-    print("="*80)
-    print(f"Total samples: {len(X)}")
-    print(f"Number of features: {len(feature_cols)}")
-    print(f"\nFeatures used: {categorical_features}")
-    print(f"\nTransport mode distribution:")
-    print(y.value_counts())
-    print(f"\nClass proportions:")
-    print(y.value_counts(normalize=True))
-
-    return X, y, categorical_features
-
-
-def train_logistic_regression(X, y, test_size=0.2, random_state=42):
-    """Train Logistic Regression classifier with feature scaling"""
-    # Split data into train and test sets
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state, stratify=y
-    )
-
-    print("\n" + "="*80)
-    print("TRAINING LOGISTIC REGRESSION CLASSIFIER")
-    print("="*80)
-    print(f"Training set size: {len(X_train)}")
-    print(f"Test set size: {len(X_test)}")
-
-    # Feature scaling (important for logistic regression)
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    # Initialize Logistic Regression
-    # For multiclass: solver='lbfgs' or 'saga', max_iter increased for convergence
-    lr_classifier = LogisticRegression(
-        multi_class='multinomial',
-        solver='lbfgs',
-        max_iter=1000,
-        random_state=random_state,
-        class_weight='balanced',  # Handle class imbalance
-        n_jobs=-1
-    )
-
-    # Train the model
-    print("\nTraining model...")
-    lr_classifier.fit(X_train_scaled, y_train)
-
-    # Make predictions
-    y_pred_train = lr_classifier.predict(X_train_scaled)
-    y_pred_test = lr_classifier.predict(X_test_scaled)
-
-    # Get prediction probabilities
-    y_pred_proba_test = lr_classifier.predict_proba(X_test_scaled)
-
-    # Evaluate performance
-    train_accuracy = accuracy_score(y_train, y_pred_train)
-    test_accuracy = accuracy_score(y_test, y_pred_test)
-
-    print(f"\nTraining Accuracy: {train_accuracy:.4f}")
-    print(f"Test Accuracy: {test_accuracy:.4f}")
-
-    return lr_classifier, scaler, X_train_scaled, X_test_scaled, y_train, y_test, y_pred_test, y_pred_proba_test
-
-
-def evaluate_model(lr_classifier, X_test, y_test, y_pred_test):
-    """Evaluate the Logistic Regression model"""
-    print("\n" + "="*80)
-    print("MODEL EVALUATION")
-    print("="*80)
-
-    # Classification report
-    print("\nClassification Report:")
-    print(classification_report(y_test, y_pred_test))
-
-    # Confusion matrix
-    cm = confusion_matrix(y_test, y_pred_test)
-
-    # Plot confusion matrix
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                xticklabels=lr_classifier.classes_,
-                yticklabels=lr_classifier.classes_)
-    plt.title('Confusion Matrix - Logistic Regression')
-    plt.ylabel('Actual')
-    plt.xlabel('Predicted')
-    plt.tight_layout()
-    plt.savefig('confusion_matrix_lr.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-    return cm
-
-
-def feature_coefficients(lr_classifier, feature_names):
-    """Analyze and visualize feature coefficients"""
-    print("\n" + "="*80)
-    print("FEATURE COEFFICIENTS ANALYSIS")
-    print("="*80)
-
-    # Get coefficients for each class
-    classes = lr_classifier.classes_
-    coefficients = lr_classifier.coef_
-
-    print(f"\nNumber of classes: {len(classes)}")
-    print(f"Coefficient matrix shape: {coefficients.shape}")
-
-    # Create visualization for each class
-    n_classes = len(classes)
-    fig, axes = plt.subplots(n_classes, 1, figsize=(12, 4*n_classes))
-
-    if n_classes == 1:
-        axes = [axes]
-
-    for idx, (class_name, coef) in enumerate(zip(classes, coefficients)):
-        # Create dataframe for this class
-        coef_df = pd.DataFrame({
-            'Feature': feature_names,
-            'Coefficient': coef
-        }).sort_values('Coefficient', key=abs, ascending=False)
-
-        print(f"\n{class_name} - Top 5 Features:")
-        print(coef_df.head().to_string(index=False))
-
-        # Plot coefficients
-        ax = axes[idx]
-        colors = ['red' if c < 0 else 'green' for c in coef_df['Coefficient']]
-        ax.barh(coef_df['Feature'], coef_df['Coefficient'], color=colors, alpha=0.7)
-        ax.set_xlabel('Coefficient Value')
-        ax.set_ylabel('Feature')
-        ax.set_title(f'Feature Coefficients for {class_name}')
-        ax.axvline(x=0, color='black', linestyle='--', linewidth=0.8)
-        ax.grid(True, alpha=0.3, axis='x')
-
-    plt.tight_layout()
-    plt.savefig('feature_coefficients_lr.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-
-def stratified_kfold_cv(X, y, n_splits=5, random_state=42):
-    """Perform Stratified K-Fold cross-validation"""
-    print("\n" + "="*80)
-    print("STRATIFIED K-FOLD CROSS-VALIDATION")
-    print("="*80)
-
-    # Feature scaling
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    lr_classifier = LogisticRegression(
-        multi_class='multinomial',
-        solver='lbfgs',
-        max_iter=1000,
-        random_state=random_state,
-        class_weight='balanced',
-        n_jobs=-1
-    )
-
-    # Use StratifiedKFold
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-
-    # Track metrics for each fold
-    fold_results = []
-
-    print(f"\nPerforming {n_splits}-fold stratified cross-validation...")
-
-    for fold, (train_idx, test_idx) in enumerate(skf.split(X_scaled, y), 1):
-        # Split data
-        X_train_fold, X_test_fold = X_scaled[train_idx], X_scaled[test_idx]
-        y_train_fold, y_test_fold = y.iloc[train_idx], y.iloc[test_idx]
-
-        # Train model
-        lr_classifier.fit(X_train_fold, y_train_fold)
-
-        # Predict
-        y_pred_fold = lr_classifier.predict(X_test_fold)
-
-        # Calculate metrics
-        accuracy = accuracy_score(y_test_fold, y_pred_fold)
-        precision = precision_score(y_test_fold, y_pred_fold, average='weighted', zero_division=0)
-        recall = recall_score(y_test_fold, y_pred_fold, average='weighted', zero_division=0)
-        f1 = f1_score(y_test_fold, y_pred_fold, average='weighted', zero_division=0)
-
-        fold_results.append({
-            'Fold': fold,
-            'Accuracy': accuracy,
-            'Precision': precision,
-            'Recall': recall,
-            'F1-Score': f1
-        })
-
-        print(f"Fold {fold}: Accuracy={accuracy:.4f}, Precision={precision:.4f}, Recall={recall:.4f}, F1={f1:.4f}")
-
-    # Create results dataframe
-    results_df = pd.DataFrame(fold_results)
-
-    print("\n" + "-"*80)
-    print("CROSS-VALIDATION SUMMARY:")
-    print("-"*80)
-    print(f"Mean Accuracy:  {results_df['Accuracy'].mean():.4f}  {results_df['Accuracy'].std():.4f}")
-    print(f"Mean Precision: {results_df['Precision'].mean():.4f}  {results_df['Precision'].std():.4f}")
-    print(f"Mean Recall:    {results_df['Recall'].mean():.4f}  {results_df['Recall'].std():.4f}")
-    print(f"Mean F1-Score:  {results_df['F1-Score'].mean():.4f}  {results_df['F1-Score'].std():.4f}")
-
-    # Plot fold performance
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
-
-    for idx, metric in enumerate(metrics):
-        ax = axes[idx // 2, idx % 2]
-        ax.plot(results_df['Fold'], results_df[metric], marker='o', linewidth=2, markersize=8)
-        ax.axhline(y=results_df[metric].mean(), color='r', linestyle='--',
-                   label=f'Mean: {results_df[metric].mean():.4f}')
-        ax.set_xlabel('Fold')
-        ax.set_ylabel(metric)
-        ax.set_title(f'{metric} Across Folds')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        ax.set_xticks(results_df['Fold'])
-
-    plt.tight_layout()
-    plt.savefig('kfold_performance_lr.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-    return results_df
-
-
-def kfold_cv_detailed(X, y, n_splits=5, random_state=42):
-    """Detailed K-Fold cross-validation with multiple metrics"""
-    print("\n" + "="*80)
-    print("DETAILED K-FOLD CROSS-VALIDATION (Multiple Metrics)")
-    print("="*80)
-
-    # Feature scaling
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    lr_classifier = LogisticRegression(
-        multi_class='multinomial',
-        solver='lbfgs',
-        max_iter=1000,
-        random_state=random_state,
-        class_weight='balanced',
-        n_jobs=-1
-    )
-
-    # Use StratifiedKFold
-    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-
-    # Define multiple scoring metrics
-    scoring = {
-        'accuracy': 'accuracy',
-        'precision_weighted': 'precision_weighted',
-        'recall_weighted': 'recall_weighted',
-        'f1_weighted': 'f1_weighted'
-    }
-
-    # Perform cross-validation with multiple metrics
-    cv_results = cross_validate(
-        lr_classifier, X_scaled, y,
-        cv=cv,
-        scoring=scoring,
-        return_train_score=True,
-        n_jobs=-1
-    )
-
-    # Display results
-    print(f"\n{n_splits}-Fold Cross-Validation Results:")
-    print("-"*80)
-
-    for metric in scoring.keys():
-        train_scores = cv_results[f'train_{metric}']
-        test_scores = cv_results[f'test_{metric}']
-
-        print(f"\n{metric.upper()}:")
-        print(f"  Train: {train_scores.mean():.4f} � {train_scores.std():.4f}")
-        print(f"  Test:  {test_scores.mean():.4f} � {test_scores.std():.4f}")
-        print(f"  Test scores per fold: {test_scores}")
-
-    return cv_results
-
-
-def hyperparameter_tuning(X, y, random_state=42):
-    """Perform hyperparameter tuning using GridSearchCV"""
-    print("\n" + "="*80)
-    print("HYPERPARAMETER TUNING")
-    print("="*80)
-
-    # Feature scaling
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    # Define parameter grid
-    param_grid = {
-        'C': [0.001, 0.01, 0.1, 1, 10, 100],  # Regularization strength
-        'penalty': ['l2'],  # L2 regularization
-        'solver': ['lbfgs', 'saga'],
-        'max_iter': [500, 1000, 2000]
-    }
-
-    # Initialize base model
-    lr_base = LogisticRegression(
-        multi_class='multinomial',
-        random_state=random_state,
-        class_weight='balanced',
-        n_jobs=-1
-    )
-
-    # Perform grid search
-    print("\nSearching for best parameters...")
-    print("This may take a while...")
-
-    grid_search = GridSearchCV(
-        lr_base,
-        param_grid,
-        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state),
-        scoring='accuracy',
-        n_jobs=-1,
-        verbose=1
-    )
-
-    grid_search.fit(X_scaled, y)
-
-    print("\n" + "="*80)
-    print("BEST PARAMETERS FOUND")
-    print("="*80)
-    print(f"Best parameters: {grid_search.best_params_}")
-    print(f"Best cross-validation score: {grid_search.best_score_:.4f}")
-
-    # Show top 5 parameter combinations
-    results_df = pd.DataFrame(grid_search.cv_results_)
-    top_results = results_df.nlargest(5, 'mean_test_score')[
-        ['params', 'mean_test_score', 'std_test_score']
-    ]
-
-    print("\nTop 5 Parameter Combinations:")
-    for idx, row in top_results.iterrows():
-        print(f"\n{row['params']}")
-        print(f"  Score: {row['mean_test_score']:.4f} � {row['std_test_score']:.4f}")
-
-    return grid_search.best_estimator_, grid_search.best_params_
-
-
-def main():
-    """Main function to run the complete Logistic Regression analysis"""
-    # Prepare data
-    X, y, categorical_features = prepare_data()
-
-    # Train Logistic Regression
-    lr_classifier, scaler, X_train, X_test, y_train, y_test, y_pred_test, y_pred_proba = train_logistic_regression(X, y)
-
-    # Evaluate model
-    evaluate_model(lr_classifier, X_test, y_test, y_pred_test)
-
-    # Feature coefficients analysis
-    feature_coefficients(lr_classifier, categorical_features)
-
-    # K-Fold Cross-Validation Techniques
-    print("\n" + "="*80)
-    print("APPLYING K-FOLD CROSS-VALIDATION TECHNIQUES")
-    print("="*80)
-
-    # 1. Stratified K-Fold
-    stratified_kfold_cv(X, y, n_splits=5)
-
-    # 2. Detailed cross-validation
-    kfold_cv_detailed(X, y, n_splits=5)
-
-    # Uncomment below to perform hyperparameter tuning (takes longer)
-    # best_model, best_params = hyperparameter_tuning(X, y)
-
-    print("\n" + "="*80)
-    print("ANALYSIS COMPLETE")
-    print("="*80)
-    print("\nGenerated files:")
-    print("  - confusion_matrix_lr.png")
-    print("  - feature_coefficients_lr.png")
-    print("  - kfold_performance_lr.png")
-
-
-if __name__ == "__main__":
-    main()
+# Load the data
+df = pd.read_csv('../preprocess/trips_demographic.csv')
+
+print("="*70)
+print("LOGISTIC REGRESSION MULTI-CLASS CLASSIFICATION")
+print("Transport Mode Prediction: Private, Public, Active, Other")
+print("="*70)
+
+print(f"\nOriginal dataset shape: {df.shape}")
+print(f"\nTransport mode distribution:")
+mode_counts = df['transport_mode'].value_counts()
+print(mode_counts)
+print("\nPercentage distribution:")
+print((mode_counts / len(df) * 100).round(2))
+
+# Select features as specified
+features = ['hhsize', 'dwelltype', 'studying', 'carlicence', 'mainact', 'totalvehs']
+target = 'transport_mode'
+
+# Check for missing values
+print(f"\nMissing values in features:")
+print(df[features].isnull().sum())
+
+# Remove rows with missing values in selected features or target
+df_clean = df[features + [target]].dropna()
+
+print(f"\nDataset shape after removing missing values: {df_clean.shape}")
+print(f"\nFinal transport mode distribution:")
+print(df_clean[target].value_counts())
+
+# Prepare features and target
+X = df_clean[features].copy()
+y = df_clean[target].copy()
+
+# Encode categorical variables
+label_encoders = {}
+categorical_features = ['dwelltype', 'studying', 'carlicence', 'mainact']
+
+print("\n" + "="*70)
+print("ENCODING CATEGORICAL FEATURES")
+print("="*70)
+
+for feature in categorical_features:
+    le = LabelEncoder()
+    X[feature] = le.fit_transform(X[feature].astype(str))
+    label_encoders[feature] = le
+    print(f"\n{feature} categories ({len(le.classes_)} unique values):")
+    encoding_dict = dict(zip(le.classes_, le.transform(le.classes_)))
+    for cat, code in list(encoding_dict.items())[:10]:  # Show first 10
+        print(f"  {cat}: {code}")
+    if len(le.classes_) > 10:
+        print(f"  ... and {len(le.classes_) - 10} more")
+
+# Split the data into training and testing sets (80-20 split)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print("\n" + "="*70)
+print("TRAIN-TEST SPLIT")
+print("="*70)
+print(f"\nTraining set size: {X_train.shape[0]} ({X_train.shape[0]/len(X)*100:.1f}%)")
+print(f"Testing set size: {X_test.shape[0]} ({X_test.shape[0]/len(X)*100:.1f}%)")
+
+print("\nTraining set class distribution:")
+train_dist = y_train.value_counts()
+print(train_dist)
+print("\nTesting set class distribution:")
+test_dist = y_test.value_counts()
+print(test_dist)
+
+# Standardize features (important for Logistic Regression)
+print("\n" + "="*70)
+print("FEATURE STANDARDIZATION")
+print("="*70)
+print("\nStandardizing features for logistic regression...")
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+print("Feature scaling complete!")
+print("\nFeature means (after scaling):")
+print(pd.DataFrame(X_train_scaled, columns=features).mean().round(4))
+print("\nFeature standard deviations (after scaling):")
+print(pd.DataFrame(X_train_scaled, columns=features).std().round(4))
+
+# Create and train the Logistic Regression model
+print("\n" + "="*70)
+print("TRAINING LOGISTIC REGRESSION MODEL")
+print("="*70)
+
+lr_model = LogisticRegression(
+    max_iter=1000,
+    multi_class='multinomial',
+    solver='lbfgs',
+    random_state=42,
+    class_weight='balanced',  # Handle class imbalance
+    C=1.0  # Regularization strength
+)
+
+print("\nModel Parameters:")
+print(f"  - Solver: {lr_model.solver}")
+print(f"  - Multi-class strategy: {lr_model.multi_class}")
+print(f"  - Max iterations: {lr_model.max_iter}")
+print(f"  - Regularization (C): {lr_model.C}")
+print(f"  - Class weight: {lr_model.class_weight}")
+
+print("\nTraining in progress...")
+lr_model.fit(X_train_scaled, y_train)
+print("Training complete!")
+print(f"Number of iterations: {lr_model.n_iter_}")
+
+# Make predictions
+y_pred = lr_model.predict(X_test_scaled)
+y_pred_proba = lr_model.predict_proba(X_test_scaled)
+
+# Evaluate the model
+print("\n" + "="*70)
+print("MODEL EVALUATION")
+print("="*70)
+
+accuracy = accuracy_score(y_test, y_pred)
+print(f"\nOverall Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+
+print("\n" + "-"*70)
+print("DETAILED CLASSIFICATION REPORT")
+print("-"*70)
+print(classification_report(y_test, y_pred))
+
+print("\n" + "-"*70)
+print("CONFUSION MATRIX")
+print("-"*70)
+cm = confusion_matrix(y_test, y_pred, labels=lr_model.classes_)
+print(cm)
+print(f"\nClasses order: {lr_model.classes_}")
+
+# Per-class accuracy
+print("\n" + "-"*70)
+print("PER-CLASS PERFORMANCE")
+print("-"*70)
+for i, class_name in enumerate(lr_model.classes_):
+    class_correct = cm[i, i]
+    class_total = cm[i, :].sum()
+    class_accuracy = class_correct / class_total if class_total > 0 else 0
+    print(f"{class_name:12s}: {class_accuracy:.4f} ({class_accuracy*100:.2f}%) - "
+          f"{class_correct}/{class_total} correct")
+
+# Feature coefficients (importance)
+print("\n" + "="*70)
+print("FEATURE COEFFICIENTS")
+print("="*70)
+
+# Get coefficients for each class
+coef_df = pd.DataFrame(
+    lr_model.coef_.T,
+    columns=lr_model.classes_,
+    index=features
+)
+
+print("\nCoefficients for each class:")
+print(coef_df.round(4))
+
+# Calculate average absolute coefficient as feature importance
+feature_importance = pd.DataFrame({
+    'feature': features,
+    'avg_abs_coefficient': np.abs(lr_model.coef_).mean(axis=0)
+}).sort_values('avg_abs_coefficient', ascending=False)
+
+print("\n" + "-"*70)
+print("FEATURE IMPORTANCE (Average Absolute Coefficient)")
+print("-"*70)
+print(feature_importance.to_string(index=False))
+
+# Visualizations
+fig = plt.figure(figsize=(16, 10))
+gs = fig.add_gridspec(2, 3, hspace=0.35, wspace=0.3)
+
+# 1. Confusion Matrix
+ax1 = fig.add_subplot(gs[0, :2])
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+            xticklabels=lr_model.classes_,
+            yticklabels=lr_model.classes_,
+            ax=ax1, cbar_kws={'label': 'Count'})
+ax1.set_xlabel('Predicted', fontsize=12, fontweight='bold')
+ax1.set_ylabel('Actual', fontsize=12, fontweight='bold')
+ax1.set_title(f'Confusion Matrix\nOverall Accuracy: {accuracy:.4f}',
+              fontsize=14, fontweight='bold')
+
+# 2. Feature Importance (Average Absolute Coefficient)
+ax2 = fig.add_subplot(gs[0, 2])
+colors = plt.cm.viridis(np.linspace(0.3, 0.9, len(features)))
+ax2.barh(feature_importance['feature'], feature_importance['avg_abs_coefficient'],
+         color=colors)
+ax2.set_xlabel('Avg Abs Coefficient', fontsize=11, fontweight='bold')
+ax2.set_title('Feature Importance', fontsize=12, fontweight='bold')
+ax2.invert_yaxis()
+for i, v in enumerate(feature_importance['avg_abs_coefficient']):
+    ax2.text(v + 0.01, i, f'{v:.3f}', va='center', fontsize=9)
+
+# 3. Class Distribution
+ax3 = fig.add_subplot(gs[1, 0])
+class_dist = y.value_counts().sort_index()
+bars = ax3.bar(class_dist.index, class_dist.values,
+               color=['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A'], alpha=0.7)
+ax3.set_xlabel('Transport Mode', fontsize=11, fontweight='bold')
+ax3.set_ylabel('Count', fontsize=11, fontweight='bold')
+ax3.set_title('Dataset Class Distribution', fontsize=12, fontweight='bold')
+ax3.tick_params(axis='x', rotation=45)
+for bar in bars:
+    height = bar.get_height()
+    ax3.text(bar.get_x() + bar.get_width()/2., height,
+            f'{int(height)}',
+            ha='center', va='bottom', fontsize=9)
+
+# 4. Per-Class Accuracy
+ax4 = fig.add_subplot(gs[1, 1])
+class_accuracies = []
+for i, class_name in enumerate(lr_model.classes_):
+    class_correct = cm[i, i]
+    class_total = cm[i, :].sum()
+    class_acc = class_correct / class_total if class_total > 0 else 0
+    class_accuracies.append(class_acc)
+
+bars = ax4.bar(lr_model.classes_, class_accuracies,
+               color=['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A'], alpha=0.7)
+ax4.set_xlabel('Transport Mode', fontsize=11, fontweight='bold')
+ax4.set_ylabel('Accuracy', fontsize=11, fontweight='bold')
+ax4.set_title('Per-Class Accuracy', fontsize=12, fontweight='bold')
+ax4.set_ylim([0, 1])
+ax4.axhline(y=accuracy, color='red', linestyle='--', label='Overall Accuracy', linewidth=2)
+ax4.tick_params(axis='x', rotation=45)
+ax4.legend()
+for bar, acc in zip(bars, class_accuracies):
+    height = bar.get_height()
+    ax4.text(bar.get_x() + bar.get_width()/2., height + 0.02,
+            f'{acc:.3f}',
+            ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+# 5. Prediction Distribution
+ax5 = fig.add_subplot(gs[1, 2])
+pred_dist = pd.Series(y_pred).value_counts().sort_index()
+width = 0.35
+x = np.arange(len(lr_model.classes_))
+bars1 = ax5.bar(x - width/2, [test_dist.get(c, 0) for c in lr_model.classes_],
+                width, label='Actual', alpha=0.8)
+bars2 = ax5.bar(x + width/2, [pred_dist.get(c, 0) for c in lr_model.classes_],
+                width, label='Predicted', alpha=0.8)
+ax5.set_xlabel('Transport Mode', fontsize=11, fontweight='bold')
+ax5.set_ylabel('Count', fontsize=11, fontweight='bold')
+ax5.set_title('Actual vs Predicted (Test Set)', fontsize=12, fontweight='bold')
+ax5.set_xticks(x)
+ax5.set_xticklabels(lr_model.classes_, rotation=45)
+ax5.legend()
+
+plt.savefig('logistic_regression_multiclass_results.png', dpi=300, bbox_inches='tight')
+print("\nVisualization saved as 'logistic_regression_multiclass_results.png'")
+
+# Create separate figure for Feature Coefficients by Class
+fig2 = plt.figure(figsize=(10, 6))
+sns.heatmap(coef_df.T, annot=True, fmt='.3f', cmap='RdBu_r', center=0,
+            cbar_kws={'label': 'Coefficient Value'})
+plt.xlabel('Features', fontsize=12, fontweight='bold')
+plt.ylabel('Transport Mode', fontsize=12, fontweight='bold')
+plt.title('Feature Coefficients by Class\n(Positive values increase probability of that class)',
+          fontsize=12, fontweight='bold')
+plt.tight_layout()
+plt.savefig('logistic_regression_feature_coefficients.png', dpi=300, bbox_inches='tight')
+print("Feature coefficients visualization saved as 'logistic_regression_feature_coefficients.png'")
+
+# Example predictions
+print("\n" + "="*70)
+print("EXAMPLE PREDICTIONS")
+print("="*70)
+
+n_examples = 5
+for i in range(min(n_examples, len(X_test))):
+    print(f"\nExample {i+1}:")
+    print(f"  Actual: {y_test.iloc[i]}")
+    print(f"  Predicted: {y_pred[i]}")
+    print(f"  Probabilities:")
+    for j, class_name in enumerate(lr_model.classes_):
+        print(f"    {class_name}: {y_pred_proba[i][j]:.4f} ({y_pred_proba[i][j]*100:.2f}%)")
+    print(f"  Result: {'✓ CORRECT' if y_pred[i] == y_test.iloc[i] else '✗ INCORRECT'}")
+
+# Model interpretation
+print("\n" + "="*70)
+print("MODEL INTERPRETATION")
+print("="*70)
+print("\nKey insights from coefficients:")
+for class_name in lr_model.classes_:
+    print(f"\n{class_name}:")
+    class_coefs = coef_df[class_name].sort_values(ascending=False)
+    print(f"  Top positive features:")
+    for feat, coef in class_coefs.head(3).items():
+        print(f"    - {feat}: {coef:.4f}")
+    print(f"  Top negative features:")
+    for feat, coef in class_coefs.tail(3).items():
+        print(f"    - {feat}: {coef:.4f}")
+
+print("\n" + "="*70)
+print("MODEL TRAINING AND EVALUATION COMPLETE!")
+print("="*70)
+print(f"\nFinal Model Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+print(f"Total samples: {len(df_clean)}")
+print(f"Features used: {', '.join(features)}")
+print(f"Classes predicted: {', '.join(lr_model.classes_)}")
+print(f"\nModel type: Logistic Regression (Multinomial)")
+print(f"Convergence: {lr_model.n_iter_[0]} iterations")

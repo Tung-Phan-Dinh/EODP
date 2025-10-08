@@ -54,8 +54,7 @@ def demographic(df):
     drop_cols = [
         'persid','hhid','travdow','otherlicence','nolicence','fulltimework','parttimework','casualwork',
         'activities','startplace','numstops','wfhmon','wfhtue','wfhwed','wfhthu','wfhfri',
-        'wfhsat','wfhsun','wfhtravday','homesubregion_ASGS','dayType','travdow_household','aveagegroup_5',
-        'homelga'
+        'wfhsat','wfhsun','wfhtravday','homesubregion_ASGS','dayType','travdow_household','aveagegroup_5'
     ]
     merged_data = merged_data.drop(columns=[c for c in drop_cols if c in merged_data.columns])
     merged_data.to_csv("trips_demographic.csv", index=False)

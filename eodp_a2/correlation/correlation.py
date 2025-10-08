@@ -52,7 +52,7 @@ def chi_square_test():
     # Categorical features to test
     categorical_features = ['hhsize', 'sex', 'carlicence', 'anywork', 'studying',
                            'mainact', 'dwelltype', 'owndwell', 'hhinc_category', 'persinc_category',
-                           'totalbikes', 'totalvehs']
+                           'totalbikes', 'totalvehs', 'homelga']
 
     print("\n" + "="*80)
     print("CHI-SQUARE TEST RESULTS: Independence between features and transport mode")
@@ -127,7 +127,7 @@ def mutual_information_analysis():
     # Encode categorical variables
     categorical_features = ['hhsize', 'sex', 'carlicence', 'anywork', 'studying',
                            'mainact', 'dwelltype', 'owndwell', 'hhinc_category', 'persinc_category',
-                           'totalbikes', 'totalvehs']
+                           'totalbikes', 'totalvehs', 'homelga']
 
     # Encode all categorical variables including transport_mode
     encoded_data = data.copy()
@@ -193,6 +193,11 @@ def correlation_heatmap():
     data['dwelltype_encoded'] = pd.factorize(data['dwelltype'])[0]
     data['owndwell_encoded'] = pd.factorize(data['owndwell'])[0]
     data['hhinc_category_encoded'] = pd.factorize(data['hhinc_category'])[0]
+    data['homelga_encoded'] = pd.factorize(data['homelga'])[0]
+
+    # Handle totalbikes and totalvehs - convert to numeric, treating 'Missing/Refused' as NaN
+    data['totalbikes_numeric'] = pd.to_numeric(data['totalbikes'], errors='coerce')
+    data['totalvehs_numeric'] = pd.to_numeric(data['totalvehs'], errors='coerce')
 
     # One-hot encode transport_mode (creates binary columns for each mode)
     transport_dummies = pd.get_dummies(data['transport_mode'], prefix='transport')
@@ -202,7 +207,7 @@ def correlation_heatmap():
         data[['hhsize', 'sex_encoded', 'carlicence_encoded',
               'anywork_encoded', 'studying_encoded', 'mainact_encoded',
               'dwelltype_encoded', 'owndwell_encoded', 'hhinc_category_encoded',
-              'totalbikes', 'totalvehs']],
+              'totalbikes_numeric', 'totalvehs_numeric', 'homelga_encoded']],
         transport_dummies
     ], axis=1)
 
@@ -243,3 +248,5 @@ def correlation_heatmap():
 
 # Run analysis
 chi_square_test()
+mutual_information_analysis()
+correlation_heatmap()

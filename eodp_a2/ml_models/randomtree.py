@@ -24,7 +24,7 @@ print("\nPercentage distribution:")
 print((mode_counts / len(df) * 100).round(2))
 
 # Select features as specified
-features = ['hhsize', 'dwelltype', 'studying', 'carlicence', 'mainact', 'totalvehs']
+features = ['dwelltype', 'studying', 'carlicence', 'mainact', 'totalvehs']
 target = 'transport_mode'
 
 # Check for missing values
