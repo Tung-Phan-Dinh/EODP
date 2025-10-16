@@ -194,7 +194,6 @@ def correlation_heatmap():
     data['owndwell_encoded'] = pd.factorize(data['owndwell'])[0]
     data['hhinc_category_encoded'] = pd.factorize(data['hhinc_category'])[0]
     data['homelga_encoded'] = pd.factorize(data['homelga'])[0]
-
     # Handle totalbikes and totalvehs - convert to numeric, treating 'Missing/Refused' as NaN
     data['totalbikes_numeric'] = pd.to_numeric(data['totalbikes'], errors='coerce')
     data['totalvehs_numeric'] = pd.to_numeric(data['totalvehs'], errors='coerce')
@@ -245,8 +244,223 @@ def correlation_heatmap():
     return corr_matrix
 
 
+def pearson_correlation():
+    """Calculate Pearson correlation between transport modes and demographic features"""
+    from scipy.stats import pearsonr
 
-# Run analysis
-chi_square_test()
-mutual_information_analysis()
+    # Load the data
+    data = pd.read_csv('../preprocess/trips_demographic.csv')
+
+    # Encode categorical variables
+    data['sex_encoded'] = pd.factorize(data['sex'])[0]
+    data['carlicence_encoded'] = pd.factorize(data['carlicence'])[0]
+    data['anywork_encoded'] = pd.factorize(data['anywork'])[0]
+    data['studying_encoded'] = pd.factorize(data['studying'])[0]
+    data['mainact_encoded'] = pd.factorize(data['mainact'])[0]
+    data['dwelltype_encoded'] = pd.factorize(data['dwelltype'])[0]
+    data['owndwell_encoded'] = pd.factorize(data['owndwell'])[0]
+    data['hhinc_category_encoded'] = pd.factorize(data['hhinc_category'])[0]
+    data['persinc_category_encoded'] = pd.factorize(data['persinc_category'])[0]
+
+    # One-hot encode transport_mode
+    transport_dummies = pd.get_dummies(data['transport_mode'], prefix='transport')
+
+    # Combine with demographic features
+    analysis_data = pd.concat([
+        data[['hhsize', 'sex_encoded', 'carlicence_encoded',
+              'anywork_encoded', 'studying_encoded', 'mainact_encoded',
+              'dwelltype_encoded', 'owndwell_encoded', 'hhinc_category_encoded',
+              'persinc_category_encoded', 'totalbikes', 'totalvehs']],
+        transport_dummies
+    ], axis=1)
+
+    # Drop NaN values
+    analysis_data = analysis_data.dropna()
+
+    print("\n" + "="*80)
+    print("PEARSON CORRELATION: Transport modes vs Demographic features")
+    print("="*80)
+
+    # Get demographic and transport columns
+    demographic_features = ['hhsize', 'sex_encoded', 'carlicence_encoded',
+                           'anywork_encoded', 'studying_encoded', 'mainact_encoded',
+                           'dwelltype_encoded', 'owndwell_encoded', 'hhinc_category_encoded',
+                           'persinc_category_encoded', 'totalbikes', 'totalvehs']
+
+    transport_modes = [col for col in analysis_data.columns if col.startswith('transport_')]
+
+    # Store results
+    pearson_results = []
+
+    for transport_mode in transport_modes:
+        print(f"\n{transport_mode}:")
+        mode_results = []
+
+        for feature in demographic_features:
+            # Calculate Pearson correlation and p-value
+            corr_coef, p_value = pearsonr(analysis_data[feature], analysis_data[transport_mode])
+
+            mode_results.append({
+                'Transport Mode': transport_mode,
+                'Feature': feature,
+                'Pearson r': corr_coef,
+                'p-value': p_value,
+                'Significant': 'Yes' if p_value < 0.05 else 'No'
+            })
+
+            print(f"  {feature:30s}: r={corr_coef:7.4f}, p={p_value:.4e} {'*' if p_value < 0.05 else ''}")
+
+        # Sort by absolute correlation for this mode
+        mode_results_sorted = sorted(mode_results, key=lambda x: abs(x['Pearson r']), reverse=True)
+        pearson_results.extend(mode_results_sorted)
+
+    # Create summary dataframe
+    pearson_df = pd.DataFrame(pearson_results)
+
+    print("\n" + "="*80)
+    print("TOP CORRELATIONS (sorted by absolute Pearson r):")
+    print("="*80)
+
+    # Show top 15 strongest correlations overall
+    top_correlations = pearson_df.reindex(
+        pearson_df['Pearson r'].abs().sort_values(ascending=False).index
+    ).head(15)
+
+    print(top_correlations[['Transport Mode', 'Feature', 'Pearson r', 'p-value', 'Significant']].to_string(index=False))
+
+    # Create visualization: heatmap of Pearson correlations
+    pearson_matrix = analysis_data[demographic_features + transport_modes].corr().loc[
+        demographic_features, transport_modes
+    ]
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(pearson_matrix, annot=True, fmt=".3f", cmap='coolwarm',
+                vmin=-0.5, vmax=0.5, center=0, cbar_kws={'label': 'Pearson r'})
+    plt.title('Pearson Correlation: Demographic Features vs Transport Modes')
+    plt.xlabel('Transport Modes')
+    plt.ylabel('Demographic Features')
+    plt.tight_layout()
+    plt.savefig('pearson_correlation_heatmap.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+    return pearson_df
+
+# ---------- Theil’s U (Uncertainty Coefficient) ----------
+def _entropy(s):
+    """Shannon entropy H(S) for a Pandas Series of discrete values."""
+    probs = s.value_counts(normalize=True)
+    return -(probs * np.log2(probs)).sum()
+
+def _conditional_entropy(y, x):
+    """Conditional entropy H(Y|X)."""
+    p_x = x.value_counts(normalize=True)
+    ent = 0.0
+    for v in p_x.index:
+        y_sub = y[x == v]
+        ent += p_x[v] * _entropy(y_sub)
+    return ent
+
+def theils_u(y, x):
+    """Uncertainty Coefficient U(Y|X): predictive power of X for Y, in [0,1]."""
+    h_y = _entropy(y)
+    if h_y == 0:
+        return 1.0
+    h_y_given_x = _conditional_entropy(y, x)
+    return (h_y - h_y_given_x) / h_y
+
+
+def theils_u_analysis():
+    """Calculate Theil’s U (predictive power) of each categorical feature for transport_mode."""
+    data = pd.read_csv('../preprocess/trips_demographic.csv')
+
+    categorical_features = ['hhsize', 'sex', 'carlicence', 'anywork', 'studying',
+                            'mainact', 'dwelltype', 'owndwell',
+                            'hhinc_category', 'persinc_category',
+                            'totalbikes', 'totalvehs', 'homelga']
+
+    print("\n" + "="*80)
+    print("THEIL'S U ANALYSIS: Predictive Power (Feature → Transport Mode)")
+    print("="*80)
+
+    u_scores = []
+    for feature in categorical_features:
+        u_val = theils_u(data['transport_mode'], data[feature])
+        u_scores.append({'Feature': feature, "Theil's U": u_val})
+        print(f"{feature:20s}: {u_val:.4f}")
+
+    u_df = pd.DataFrame(u_scores).sort_values("Theil's U", ascending=False)
+
+    # Visualization
+    plt.figure(figsize=(10, 6))
+    plt.barh(u_df['Feature'], u_df["Theil's U"])
+    plt.xlabel("Theil's U (Predictive Power)")
+    plt.title("Predictive Power of Features for Transport Mode (Theil's U)")
+    plt.tight_layout()
+    plt.savefig('theils_u.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+    return u_df
+
+def combined_summary():
+    """
+    Combine Chi-square, Cramer's V, Mutual Information, and Theil's U
+    with significance highlighting.
+    """
+    # Run the three analyses
+    chi_df = chi_square_test()                  # contains Chi-square, p-value, Cramer's V
+    mi_df = mutual_information_analysis()       # contains Mutual Information
+    u_df  = theils_u_analysis()                 # contains Theil's U
+
+    # Select required columns
+    chi_sel = chi_df[['Feature', 'Chi-square', 'p-value', "Cramer's V"]].copy()
+    mi_sel  = mi_df[['Feature', 'Mutual Information']].copy()
+    u_sel   = u_df[['Feature', "Theil's U"]].copy()
+
+    # Merge into one summary table
+    merged = (
+        chi_sel
+        .merge(mi_sel, on='Feature', how='outer')
+        .merge(u_sel, on='Feature', how='outer')
+    )
+
+
+    # Sort results for readability
+    merged = merged.sort_values(
+        by=["Cramer's V", "Theil's U", "Mutual Information"],
+        ascending=False
+    ).reset_index(drop=True)
+
+    # Round numeric columns
+    for col in ['Chi-square', "Cramer's V", 'Mutual Information', "Theil's U"]:
+        if col in merged.columns:
+            merged[col] = merged[col].round(5)
+
+    if 'p-value' in merged.columns:
+        merged['p-value'] = merged['p-value'].apply(
+        lambda x: f"{x:.3e}" if isinstance(x, (int, float)) else x
+        )
+    # Print formatted summary
+    print("\n" + "="*90)
+    print("COMBINED SUMMARY: Chi-square vs Cramer's V vs Mutual Information vs Theil's U")
+    print("="*90)
+    print(merged.to_string(index=False))
+
+    # Save clean version to CSV
+    merged.to_csv('correlation_summary.csv', index=False)
+
+
+    return merged
+
+
+# Run all analyses
+combined_summary()
 correlation_heatmap()
+
+"""
+    Declaration
+    I acknowledge the use of ChatGPT [https://chat.openai.com/] to support the
+    development of my code and understanding of key concepts.
+
+    I used prompts to:
+    Understand and write code for Cramer's V, Theil's U, and Mutual Information.
+"""

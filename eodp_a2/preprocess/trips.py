@@ -11,18 +11,6 @@ def process_trips(filepath):
     #clean nan values from trips dataframe
     df = df.dropna(subset=['transport_mode'])
 
-    '''
-    # Plotting the distribution of transport categories
-    plt.figure(figsize=(10, 6))
-    sns.countplot(data=trips, x='transport_mode', order=trips['transport_mode'].value_counts().index, palette='Set2')
-    plt.title('Distribution of Transport Categories')
-    plt.xlabel('Transport Category')
-    plt.ylabel('Count')
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.show()
-    '''
-
     # Define the columns to extract
     columns_to_extract = [
         'tripid', 'hhid', 'persid', 'tripno', 'trippoststratweight', 

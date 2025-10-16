@@ -137,6 +137,12 @@ print("DETAILED CLASSIFICATION REPORT")
 print("-"*70)
 print(classification_report(y_test, y_pred))
 
+# Export classification report to CSV
+report_dict = classification_report(y_test, y_pred, output_dict=True)
+report_df = pd.DataFrame(report_dict).transpose()
+report_df.to_csv('logistic_regression_classification_report.csv')
+print("\nClassification report exported to 'logistic_regression_classification_report.csv'")
+
 print("\n" + "-"*70)
 print("CONFUSION MATRIX")
 print("-"*70)
@@ -316,3 +322,12 @@ print(f"Features used: {', '.join(features)}")
 print(f"Classes predicted: {', '.join(lr_model.classes_)}")
 print(f"\nModel type: Logistic Regression (Multinomial)")
 print(f"Convergence: {lr_model.n_iter_[0]} iterations")
+
+"""
+    Declaration
+    I acknowledge the use of ChatGPT [https://chat.openai.com/] to support the
+    development of my code and understanding of key concepts.
+
+    I used prompts to:
+    Understand and write Machine Learning model Logistic Regression
+"""

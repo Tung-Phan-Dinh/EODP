@@ -113,14 +113,14 @@ for k in k_values:
         'train_time': train_time
     })
     
-    print(f"  k={k:2d}: Accuracy={accuracy:.4f}, CV={cv_scores.mean():.4f}±{cv_scores.std():.4f}")
+    print(f"  k={k:2d}: Accuracy={accuracy:.4f}, CV={cv_scores.mean():.4f}+-{cv_scores.std():.4f}")
 
 # Select best K
 knn_results_df = pd.DataFrame(knn_results)
 best_k_idx = knn_results_df['accuracy'].idxmax()
 best_k = knn_results_df.iloc[best_k_idx]['k']
 
-print(f"\n🏆 Best K value: {int(best_k)}")
+print(f"\n Best K value: {int(best_k)}")
 print(f"   Test Accuracy: {knn_results_df.iloc[best_k_idx]['accuracy']:.4f}")
 print(f"   CV Accuracy: {knn_results_df.iloc[best_k_idx]['cv_mean']:.4f}")
 
@@ -147,6 +147,12 @@ print(f"\nOverall Accuracy: {accuracy_knn:.4f} ({accuracy_knn*100:.2f}%)")
 
 print("\nClassification Report:")
 print(classification_report(y_test, y_pred_knn))
+
+# Export KNN classification report to CSV
+report_dict_knn = classification_report(y_test, y_pred_knn, output_dict=True)
+report_df_knn = pd.DataFrame(report_dict_knn).transpose()
+report_df_knn.to_csv('knn_classification_report.csv')
+print("\nKNN classification report exported to 'knn_classification_report.csv'")
 
 print("\nConfusion Matrix:")
 print(cm_knn)
@@ -251,6 +257,12 @@ print(f"\nOverall Accuracy: {accuracy_gb:.4f} ({accuracy_gb*100:.2f}%)")
 
 print("\nClassification Report:")
 print(classification_report(y_test, y_pred_gb))
+
+# Export Gradient Boosting classification report to CSV
+report_dict_gb = classification_report(y_test, y_pred_gb, output_dict=True)
+report_df_gb = pd.DataFrame(report_dict_gb).transpose()
+report_df_gb.to_csv('gradient_boosting_classification_report.csv')
+print("\nGradient Boosting classification report exported to 'gradient_boosting_classification_report.csv'")
 
 print("\nConfusion Matrix:")
 print(cm_gb)
@@ -405,3 +417,12 @@ print(f"\nFinal Results:")
 print(f"  KNN (K={int(best_k)}): {accuracy_knn:.4f} ({accuracy_knn*100:.2f}%)")
 print(f"  Gradient Boosting: {accuracy_gb:.4f} ({accuracy_gb*100:.2f}%)")
 print(f"\nBoth models trained and evaluated successfully!")
+
+"""
+    Declaration
+    I acknowledge the use of ChatGPT [https://chat.openai.com/] to support the
+    development of my code and understanding of key concepts.
+
+    I used prompts to:
+    Understand and write Machine Learning model KNN and Gradient Boosting
+"""
