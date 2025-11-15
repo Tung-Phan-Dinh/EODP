@@ -24,11 +24,7 @@ def process_trips(filepath):
     return prefer_trips
 
 def categorize_mode(mode):
-    if mode in ['Train', 'Public Bus', 'Tram', 'School Bus']:
-        return 'Public'
-    elif mode in ['Vehicle Driver', 'Vehicle Passenger', 'Motorcycle', 'Taxi','Rideshare Service']:
+    if mode in ['Vehicle Driver', 'Vehicle Passenger', 'Motorcycle', 'Taxi','Rideshare Service']:
         return 'Private'
-    elif mode in ['Walking', 'Bicycle', 'Running/jogging', 'e-Scooter']:
-        return 'Active'
-    else:
-        return 'Other'
+    else: 
+        return 'Non-Private'
